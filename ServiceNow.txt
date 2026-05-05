@@ -1,0 +1,159 @@
+from collections import deque
+
+def SubmissionGhost(
+    step,
+    total_steps,
+    pos,
+    last_pos,
+    neighbors,
+    has_slot,
+    slot_coins,
+    data
+):
+    if data is None:
+        data = {
+            'graph': {},
+            'slots': {},
+            'distances': {0: 0},
+            'visited': set(),
+            'target': None,
+            'path': [],
+            'farming': False,
+        }
+    d = data
+    if pos not in d['graph']:
+        d['graph'][pos] = []
+    for nb in neighbors:
+        if nb not in d['graph'][pos]:
+            d['graph'][pos].append(nb)
+        if nb not in d['graph']:
+            d['graph'][nb] = []
+        if pos not in d['graph'][nb]:
+            d['graph'][nb].append(pos)
+    if pos not in d['distances']:
+        for nb in d['graph'].get(pos, []):
+            if nb in d['distances']:
+                d['distances'][pos] = d['distances'][nb] + 1
+                break
+    if has_slot and pos not in d['slots']:
+        d['slots'][pos] = d['distances'].get(pos, 0)
+    d['visited'].add(pos)
+    explore_time = min(600, total_steps // 3)
+    fully_explored = all(v in d['visited'] for v in d['graph'])
+    if not d['farming'] and (step >= explore_time or fully_explored):
+        if d['slots']:
+            d['target'] = max(d['slots'], key=lambda v: d['slots'][v])
+            d['farming'] = True
+            d['path'] = []
+    if d['farming'] and d['target'] is not None:
+        if pos == d['target']:
+            return -1, d
+        if not d['path']:
+            d['path'] = find_path(d['graph'], pos, d['target'])
+        if d['path']:
+            next_step = d['path'].pop(0)
+            if next_step in neighbors:
+                return next_step, d
+            else:
+                d['path'] = find_path(d['graph'], pos, d['target'])
+                if d['path']:
+                    next_step = d['path'].pop(0)
+                    if next_step in neighbors:
+                        return next_step, d
+        return closest_neighbor(pos, d['target'], d['graph'], neighbors), d
+    fresh = [nb for nb in neighbors if nb not in d['visited']]
+    if fresh:
+        return fresh[0], d
+    unknown = [v for v in d['graph'] if v not in d['visited']]
+    if unknown:
+        path = find_path(d['graph'], pos, unknown[0])
+        if path and path[0] in neighbors:
+            return path[0], d
+    if d['slots']:
+        d['target'] = max(d['slots'], key=lambda v: d['slots'][v])
+        d['farming'] = True
+        d['path'] = find_path(d['graph'], pos, d['target'])
+        if d['path'] and d['path'][0] in neighbors:
+            return d['path'].pop(0), d
+    return neighbors[0] if neighbors else -1, d
+
+
+def SubmissionBot(
+    step,
+    total_steps,
+    pos,
+    last_pos,
+    neighbors,
+    has_slot,
+    slot_coins,
+    data
+):
+    if data is None:
+        data = {
+            'best_slot': -1,
+            'best_slot_score': -1,
+            'path': [],
+            'rushing': False,
+        }
+    d = data
+    if has_slot and slot_coins >= 10:
+        score = slot_coins + pos
+        if score > d['best_slot_score']:
+            d['best_slot'] = pos
+            d['best_slot_score'] = score
+            d['path'] = []
+        return -1, d
+    if has_slot:
+        score = slot_coins + pos
+        if score > d['best_slot_score']:
+            d['best_slot'] = pos
+            d['best_slot_score'] = score
+            d['path'] = []
+    if total_steps - step < 200 and d['best_slot'] >= 0:
+        d['rushing'] = True
+    if d['rushing'] and d['best_slot'] >= 0:
+        if pos == d['best_slot']:
+            return -1, d
+        if d['path'] and d['path'][0] in neighbors:
+            return d['path'].pop(0), d
+        return head_toward(pos, d['best_slot'], neighbors, last_pos), d
+    options = [nb for nb in neighbors if nb != last_pos]
+    if not options:
+        options = neighbors
+    options.sort(reverse=True)
+    return options[0], d
+
+
+def find_path(graph, start, end):
+    if start == end:
+        return []
+    queue = deque([[start]])
+    visited = {start}
+    while queue:
+        path = queue.popleft()
+        node = path[-1]
+        for nb in graph.get(node, []):
+            if nb == end:
+                return path[1:] + [nb]
+            if nb not in visited:
+                visited.add(nb)
+                queue.append(path + [nb])
+    return []
+
+
+def closest_neighbor(pos, target, graph, neighbors):
+    best, best_dist = neighbors[0], float('inf')
+    for nb in neighbors:
+        dist = len(find_path(graph, nb, target))
+        if dist < best_dist:
+            best_dist = dist
+            best = nb
+    return best
+
+
+def head_toward(pos, target, neighbors, last_pos):
+    if not neighbors:
+        return -1
+    ordered = sorted(neighbors, reverse=(target > pos))
+    no_backtrack = [nb for nb in ordered if nb != last_pos]
+    return no_backtrack[0] if no_backtrack else ordered[0]
